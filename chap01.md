@@ -194,9 +194,10 @@ Xv6的引导加载程序从磁盘加载xv6内核并从 `entry`（1044）开始�
 The boot loader loads the xv6 kernel into memory at physical address 0x100000. The reason it doesn’t load the kernel at 0x80100000, where the kernel expects to ﬁnd its instructions and data, is that there may not be any physical memory at such a high address on a small machine. The reason it places the kernel at 0x100000 rather than 0x0 is because the address range 0xa0000:0x100000 contains I/O devices.
 -->
 
-引导加载程序将xv6内核加载到物理地址0x100000的内存中。
-它没有在内核期望找到其指令和数据的 0x80100000 加载内核的原因 是在小型机器上的这么高的地址上可能没有任何物理内存。
-它将内核置于 0x100000 而不是 0x0 的原因是因为地址范围 0xa0000 ：0x100000
+引导加载程序将 xv6 内核加载到物理地址 `0x100000` 的内存中。
+它没有在内核期望找到其指令和数据的 `0x80100000` 加载内核的原因
+是在小型机器上的这么高的地址上可能没有任何物理内存。
+它将内核置于 `0x100000` 而不是 `0x0` 的原因是因为地址范围 `0xa0000:0x100000`
 包含 I/O 设备。
 
 <!--
@@ -205,23 +206,24 @@ addresses starting at 0x80000000 (called KERNBASE (0207)) to physical addresses 
 -->
 
 为了允许内核的其余部分运行，条目设置一个页表，
-将从0x80000000开始的虚拟地址（称为`KERNBASE`（0207））映射到从 0x0 开始的物理地址（参见图1-2）。
+将从 `0x80000000` 开始的虚拟地址（称为`KERNBASE`（0207））映射到从 `0x0`
+开始的物理地址（参见图1-2）。
 设置映射到相同物理内存范围的两个虚拟地址范围是页表的常见用法，我们将看到更多这样的示例。
 
 <!--
 The entry page table is defined in main.c (1306). We look at the details of page tables in Chapter 2, but the short story is that entry 0 maps virtual addresses main+code 0:0x400000 to physical addresses 0:0x400000. This mapping is required as long as entry is executing at low addresses, but will eventually be removed.
 -->
 
-入口页表在 `main.c`中定义（1306）。
+入口页表在 `main.c` 中定义（1306）。
 我们在第2章中查看页表的详细信息，但简短的说明是条目0将虚拟地址 
-0：0x400000 映射到物理地址 0：0x400000。
+`0：0x400000` 映射到物理地址 `0：0x400000` 。
 只要 `entry` 在低地址执行则需要此映射，该映射最终将被删除。
 
 <!--
 Entry 512 maps virtual addresses KERNBASE:KERNBASE+0x400000 to physical addresses 0:0x400000. This entry will be used by the kernel after entry has ﬁnished; it maps the high virtual addresses at which the kernel expects to ﬁnd its instructions and data to the low physical addresses where the boot loader loaded them. This mapping restricts the kernel instructions and data to 4 Mbytes.
 -->
 
-条目 512 将虚拟地址`ERNBASE:KERNBASE+0x400000` 映射到物理地址`0:0x400000`。
+条目 512 将虚拟地址 `ERNBASE:KERNBASE+0x400000` 映射到物理地址 `0:0x400000`。
 输入完成后，内核将使用此条目;
 它将内核期望发现其指令和数据的高虚拟地址映射到引导加载程序加载它们的低物理地址。
 此映射将内核指令和数据限制为4 MB。
@@ -426,8 +428,208 @@ Once the process is initialized, userinit marks it available for scheduling by s
 
 
 
+<!--
+Now that the ﬁrst process’s state is prepared, it is time to run it. After main calls userinit, mpmain calls scheduler to start running processes (1257). Scheduler (2758) looks for a process with p->state set to RUNNABLE, and there’s only one: initproc. It sets the per-cpu variable proc to the process it found and calls switchuvm to tell the hardware to start using the target process’s page table (1879). Changing page tables while executing in the kernel works because setupkvm causes all processes’ page tables to have identical mappings for kernel code and data. switchuvm also sets up a task state segment SEG_TSS that instructs the hardware to execute system calls and interrupts on the process’s kernel stack. We will re-examine the task state segment in Chapter 3.
+-->
+
+现在已经准备好了第一个进程的状态，现在是运行它的时候了。
+在 `main` 调用 `userinit`之后，`mpmain` 调用调度程序以开始运行进程（1257）。
+调度程序（2758）查找 `p->state` 设置为 `RUNNABLE` 的进程， 并且只有一个：`initproc`。 
+它将 per-cpu 变量 `proc` 设置为它找到的进程，
+并调用 `switchuvm` 告诉硬件开始使用目标进程的页表（1879）。
+在内核中执行时更改页表是有效的，因为 `setupkvm`
+会导致所有进程的页表具有相同的内核代码和数据映射。
+`switchuvm` 还设置一个任务状态段 `SEG_TSS`，
+指示硬件在进程的内核堆栈上执行系统调用和中断。 我们将在第4章重新检查任务状态段。
 
 
+<!--
+scheduler now sets p->state to RUNNING and calls swtch (3059) to perform a
+context switch to the target process’s kernel thread. swtch ﬁrst saves the current
+registers.
+The current context is not a process but rather a special per-cpu scheduler context,
+so scheduler tells swtch to save the current hardware registers in per-cpu storage
+(cpu->scheduler) rather than in any process’s kernel thread context. swtch then
+loads the saved registers of the target kernel thread (p->context) into the x86 hardware
+registers, including the stack pointer and instruction pointer. We’ll examine
+swtch in more detail in Chapter 5. The ﬁnal ret instruction (3078) pops the target
+process’s %eip from the stack, ﬁnishing the context switch. Now the processor is running
+on the kernel stack of process p.
+-->
 
+
+`scheduler` 现在将 `p->state` 设置为 `RUNNING` 
+并调用 `swtch`（3059）以执行到目标进程的内核线程的上下文切换。
+`swtch` 首先保存当前寄存器。 
+当前上下文不是一个进程，
+而是一个特殊的 per-cpu 调度程序上下文，
+因此调度程序告诉 `swtch` 将当前硬件寄存器保存在
+per-cpu 存储（`cpu->scheduler`）中，而不是在任何进程的内核线程上下文中。
+然后，`swtch` 将目标内核线程（`p->context`）
+的已保存寄存器加载到 x86 硬件寄存器中，包括堆栈指针和指令指针。
+我们将在第5章中更详细地研究 `swtch`。
+最终 ret 指令（3078）从堆栈中弹出目标进程的 `%eip`，完成上下文切换。
+现在处理器正在进程 `p` 的内核堆栈上运行。 
+
+<!--
+`Allocproc` has previously set initproc's p->context->eip to forkret,
+so the ret starts executing forkret.
+On the first invocation (that is this one), forkret (2853) runs
+initilization functions that cannot be run from main because they
+must be run in the context of a regular process with its own kernel stack.
+Then forkret returns. Allocproc arranged that the top word on the stack after
+p->context is popped off would be trapret, so now trapret begins executing,
+with %esp set to p->tf. Trapret (3324) uses pop instructions to restore
+registers from the trap frame (0602) just as swtch did with the kernel context:
+popal restores the general registers, then the popl instructions restore 
+%gs, %fs, %es, and %ds. The addl skips over the two fields 
+trapno and errcode. Finally, the iret instruction pops %cs, %eip, %flags, %esp, and
+%ss from the stack. The contents of the trap frame have been transferred to the CPU
+state, so the processor continues at the %eip speciﬁed in the trap frame. For initproc, that means virtual address zero, the ﬁrst instruction of initcode.S.
+-->
+
+`Allocproc` 先前已将 `initproc` 的 `p->context->eip` 设置为 `forkret`，
+所以 `ret` 开始执行 `forkret`。
+在第一次调用（即这一次）时，`forkret`（2853）运行无法从
+`main` 运行的启动函数，因为它们必须在具有自己的内核堆栈的常规进程的上下文中运行。
+然后 `forkret` 返回。
+`Allocproc` 安排在弹出 `p->context` 之后堆栈的顶部 word
+将是 `trapret`，所以现在 `trapret` 开始执行，
+`%esp` 设置为 `p->tf`。
+`Trapret`（3324）使用 `pop` 指令从陷阱帧（0602）恢复寄存器，就像内核上下文的 `swtch` 一样：
+`popal` 恢复通用寄存器，然后 `popl` 指令恢复 `%gs`，`%fs`，`%es`和`%ds`。
+`addl` 跳过 `trapno` 和 `errcode` 这两个字段。
+最后，`iret`  指令从堆栈中弹出 `%cs`，`%eip`，`%flags`，`%esp` 和 `%ss`。
+陷阱帧的内容已转移到CPU状态，因此处理器从陷阱帧中指定的`%eip`继续。
+对于 `initproc`，这意味着虚拟地址为零，即`initcode.S`的第一条指令。
+
+<!--
+At this point, %eip holds zero and %esp holds 4096. These are virtual addresses in the process’s address space. The processor’s paging hardware translates them into physical addresses. allocuvm has set up the process’s page table so that virtual address zero refers to the physical memory allocated for this process, and set a flag (PTE_U) that tells the paging hardware to allow user code to access that memory. The fact that userinit (2533) set up the low bits of %cs to run the process’s user code at CPL=3 means that the user code can only use pages with PTE_U set, and cannot modify sensitive hardware registers such as %cr3. So the process is constrained to using only its own memory.
+-->
+
+此时，`%eip` 保持为零，`%esp` 保持4096.
+这些是进程地址空间中的虚拟地址。
+处理器的分页硬件将它们转换为物理地址。
+ `allocuvm` 有设置进程的页表，以便虚拟地址零指的是为此进程分配的物理内存，
+并设置一个标志（`PTE_U`），告诉分页硬件允许用户代码访问该内存。
+`userinit`（2533）设置`%cs` 的低位以在 `CPL = 3`处运行进程的用户代码这一事实
+意味着用户代码只能使用设置了`PTE_U`的页面，
+并且无法修改敏感的硬件寄存器，例如`%cr3`。
+因此，该过程仅限于使用自己的内存。
+
+
+## The first system call: exec
+
+<!--
+Now that we have seen how the kernel provides strong isolation for processes, let’s look
+at how a user-level process re-enters the kernel to ask for services that it cannot
+perform itself.
+-->
+
+现在我们已经看到内核如何为进程提供强大的隔离，
+让我们看一下用户级进程如何重新进入内核以询问它自身无法执行的服务。
+
+<!--
+The first action of initcode.S is to invoke the exec system call. As we saw in Chapter 0,
+exec replaces the memory and registers of the current process with a new program, but it
+leaves the file descriptors, process id, and parent process unchanged.
+-->
+
+`initcode.S` 的第一个动作是调用 `exec` 系统调用。
+正如我们在第0章中看到的，`exec` 用新程序替换当前进程的内存和寄存器，
+但它保持文件描述符，进程ID和父进程不变。
+
+<!--
+Initcode.S (8409) begins by pushing three values on the stack—$argv, $init, and $0—and
+then sets %eax to SYS_exec and executes int T_SYSCALL: it is asking the kernel to run the
+exec system call. If all goes well, exec never returns: it starts running the program
+named by $init, which is a pointer to the NUL-terminated string /init (8422-8424). The
+other argument is the argv array of command-line arguments;
+the zero at the end of the array marks its end. If the exec fails and does return,
+initcode loops calling the exit system call, which deﬁnitely should not return
+(8416-8420).
+-->
+
+`Initcode.S`（8409）首先在堆栈上 push 三个值 --- `$argv`，`$init` 和 `$0` ---
+然后将 `%eax` 设置为 `SYS_exec` 并执行 `int T_SYSCALL` ：它要求内核运行 `exec` 系统调用。
+如果一切顺利，`exec` 永远不会返回：它开始运行由 `$init` 命名的程序，
+这是一个指向 NUL终止的字符串 `/init`（8422-8424）的指针。 
+另一个参数是命令行参数的 `argv` 数组;
+数组末尾的零标志着它的结束。
+如果 `exec` 失败并且确实返回，
+则 `initcode` 循环调用 `exit` 系统调用，该调用无法返回（8416-8420）。
+
+<!--
+This code manually crafts the ﬁrst system call to look like an ordinary system call, which
+we will see in Chapter 3. As before, this setup avoids special-casing the ﬁrst process (in
+this case, its ﬁrst system call), and instead reuses code that xv6 must provide for
+standard operation.
+-->
+
+这段代码手动地将第一个系统调用看作普通的系统调用，
+我们将在第3章中看到。
+如前所述，这种设置避免了将第一个进程
+（在这种情况下，它的第一个系统调用）作为特殊情况处理，
+而是重用 xv6 必须为标准操作提供的代码。
+
+<!--
+Chapter 2 will cover the implementation of exec in detail, but at a high level it replaces
+initcode with the /init binary, loaded out of the ﬁle system. Now initcode (8400) is done,
+and the process will run /init instead. Init (8510) creates a new console device file if
+needed and then opens it as ﬁle descriptors 0, 1, and 2. Then it loops, starting a console
+shell, handles orphaned zombies until the shell exits, and repeats. The system is up.
+-->
+
+第2章将详细介绍 `exec` 的实现，但在较高的层次上，它将使用 `/init` 
+二进制文件替换 `initcode` ，从文件系统中加载。
+现在 `initcode`（8400）完成了，进程将运行 `/init`。
+如果需要，`Init`（8510）创建一个新的控制台设备文件，
+然后将其作为文件描述符 0,1和2打开。
+然后循环，启动控制台shell，处理孤立的僵尸进程，直到shell退出，并重复。
+系统启动了。
+
+## Real world
+
+<!--
+In the real world, one can ﬁnd both monolithic kernels and microkernels. Many Unix kernels
+are monolithic. For example, Linux has a monolithic kernel, although some OS functions run
+as user-level servers (e.g., the windowing system). Kernels such as L4, Minix, QNX are
+organized as a microkernel with servers, and have seen wide deployment in embedded
+settings.
+-->
+
+在现实世界中，人们可以找到宏内核和微内核。
+许多Unix内核都是宏内核的。
+例如，Linux 使用宏内核，尽管一些 OS 功能作为用户级服务（例如，窗口系统）运行。
+诸如 L4，Minix，QNX 之类的内核被组织为具有服务的微内核，并且已经在嵌入式设置中进行了广泛部署。
+
+<!--
+Most operating systems have adopted the process concept, and most processes look similar
+to xv6’s. A real operating system would ﬁnd free proc structures with an explicit free
+list in constant time instead of the linear-time search in allocproc; xv6 uses the linear
+scan (the ﬁrst of many) for simplicity.
+-->
+
+大多数操作系统都采用了进程的概念，大多数进程看起来与xv6类似。
+一个真正的操作系统会使用显式空闲列表在固定时间内找到空闲的proc结构，而不是allocproc中的线性时间搜索;
+为简单起见，xv6使用线性扫描（许多中的第一个）。
+
+## Exercises
+
+<!--
+1. Set a breakpoint at swtch. Single step with gdb’s stepi through the ret to forkret,
+   then use gdb’s finish to proceed to trapret, then stepi until you get to initcode at
+   virtual address zero.
+
+2. KERNBASE limits the amount of memory a single process can use, which might be
+   irritating on a machine with a full 4 GB of RAM. Would raising KERNBASE allow a process
+   to use more memory?
+-->
+
+1. 在 `swtch` 设置断点。 单步用 `gdb` 的 `stepi` 通过 `ret` 到 `forkret` ，
+    然后使用gdb的 `finish` 继续执行到 `trapret`，然后 `stepi` 直到你到达虚拟地址为零的initcode。
+
+2. `KERNBASE` 限制单个进程可以使用的内存量，这可能会对具有完整4 GB RAM的计算机造成不便。
+   提高 `KERNBASE` 会让进程使用更多内存吗？
 
 
